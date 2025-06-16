@@ -30,27 +30,33 @@ class ReActRatioAgent:
 
     def fetch_moneycontrol_ratios(self, slug: str, code: str) -> pd.DataFrame:
         """
-        Scrape ratios table from Moneycontrol.
-        Example: slug='infosys', code='IT' → Infosys
+        Scrape ratios table from Moneycontrol using soup instead of read_html.
         """
         url = f"https://www.moneycontrol.com/financials/{slug}/ratiosVI/{code}"
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers, timeout=10)
-
         soup = BeautifulSoup(response.text, "html.parser")
-        tables = soup.find_all("table")
 
-        if not tables:
-            raise ValueError("Could not find ratio table on Moneycontrol.")
+        table = soup.find("table")
+        if not table:
+            raise ValueError("❌ No table found in the page.")
 
-        df = pd.read_html(str(tables[0]))[0]
+        rows = table.find_all("tr")
+        data = []
+
+        for row in rows:
+            cols = [col.get_text(strip=True) for col in row.find_all(["td", "th"])]
+            if cols:
+                data.append(cols)
+
+        df = pd.DataFrame(data[1:], columns=data[0])
         return df
 
     def extract_relevant_ratios(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Keep only ROE and ROCE rows from the scraped ratio table.
+        Keep only ROE and ROCE rows from the table.
         """
-        df.columns = df.columns.str.replace("\n", " ")
+        df.columns = df.columns.str.replace("\n", " ").str.strip()
         df = df.rename(columns=lambda x: x.strip())
 
         df = df[df.iloc[:, 0].str.contains("Return on Equity|ROCE", case=False, na=False)]
@@ -58,7 +64,7 @@ class ReActRatioAgent:
         return df
 
     def run(self, ticker: str) -> RatioReport:
-        # Hardcoded map for known companies (replace with dynamic lookup if needed)
+        # Hardcoded map for known companies
         ticker_map = {
             "INFY": ("infosys", "IT"),
             "TCS": ("tataconsultancyservices", "ITE"),
@@ -75,13 +81,13 @@ class ReActRatioAgent:
         df = self.fetch_moneycontrol_ratios(slug, code)
         ratio_df = self.extract_relevant_ratios(df)
 
-        # Step 2: Prepare text block for LLM prompt
+        # Step 2: Prepare summary input text for LLM
         summary_text = f"ROE and ROCE data for {ticker} (FY21–FY25):\n"
         for year in ["Mar'21", "Mar'22", "Mar'23", "Mar'24", "Mar'25"]:
             try:
                 roe = ratio_df.loc["Return on Equity / Networth", year]
                 roce = ratio_df.loc["ROCE (%)", year]
-                summary_text += f"\nFY{year[-2:]}: ROE = {roe}, ROCE = {roce}"
+                summary_text += f"FY{year[-2:]}: ROE = {roe}, ROCE = {roce}\n"
             except Exception:
                 continue
 
@@ -93,10 +99,10 @@ class ReActRatioAgent:
             "Use plain English and avoid jargon."
         )
 
-        # Step 3: Get LLM output
+        # Step 3: Ask LLM to explain
         response = self.llm.invoke(prompt).content.strip()
 
-        # Step 4: Construct report (not parsing values into DupontComponent here)
+        # Step 4: Build output
         dummy_component = DupontComponent(
             year="FY25",
             roe=0.0,
