@@ -1,0 +1,19 @@
+# 🔧 Core Python tools
+pydantic>=2.0
+requests
+beautifulsoup4
+pandas
+openai
+streamlit
+langchain>=0.1.17
+python-dotenv
+
+# 🤖 LLM models + LangChain wrappers
+langchain-openai
+langchain-community
+
+# 🌐 Web search
+tavily-search
+
+# Optional: for HTML rendering and extra parsing
+lxml
