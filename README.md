@@ -1,6 +1,6 @@
 # ai-funda-analyst
 
-Component	What it does	User-visible outcome
+What it does ??
 🧠 Router	Interprets query intent and routes it to the relevant agents	Efficiently handles requests like “Give score,” “Show red flags,” “Summarize call”
 
 🔍 Forensic Accounting Agent (ReAct)	Identifies signs of financial manipulation using Beneish M-Score, Benford's Law, promoter news, audit changes, accruals	Returns suspicious findings with LLM-generated explanation
