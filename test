@@ -1,18 +1,17 @@
-st.markdown("---")
-st.header("📄 Ask Questions from Your Own Document")
+def extract_text_from_pdf(file_path: str) -> str:
+    import fitz  # PyMuPDF
+    import pytesseract
+    from PIL import Image
+    import io
 
-uploaded_file = st.file_uploader("Upload a PDF document to enable RAG-based querying")
-
-if uploaded_file:
-    with open("temp_uploaded.pdf", "wb") as f:
-        f.write(uploaded_file.read())
-
-    process_document("temp_uploaded.pdf")
-    st.success("✅ Document processed. You can now ask questions.")
-
-    user_question = st.text_input("❓ Enter your question about the document")
-
-    if user_question:
-        with st.spinner("🔎 Searching with RAG..."):
-            answer = query_document(user_question)
-            st.markdown(f"**📘 Answer:** {answer}")
+    doc = fitz.open(file_path)
+    all_text = ""
+    for page in doc:
+        text = page.get_text()
+        if not text.strip():  # If text is empty, fallback to OCR
+            pix = page.get_pixmap(dpi=300)  # Higher DPI improves OCR accuracy
+            img_data = pix.tobytes("png")
+            image = Image.open(io.BytesIO(img_data))
+            text = pytesseract.image_to_string(image)
+        all_text += text + "\n"
+    return all_text
