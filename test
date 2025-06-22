@@ -1,4 +1,4 @@
-RuntimeError: Directory 'static/' does not exist
+ModuleNotFoundError: No module named 'frontend'
 Traceback:
 File "C:\Users\naina\Downloads\agentic_rag_streamlit\ai_funda_analyst\ai-funda-analyst\app.py", line 9, in <module>
     from agents.rag_pipeline import process_document, query_document
@@ -7,18 +7,3 @@ File "C:\Users\naina\Downloads\agentic_rag_streamlit\ai_funda_analyst\ai-funda-a
     ^^^^^^^^^^^
 File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\fitz\__init__.py", line 1, in <module>
     from frontend import *
-File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\frontend\__init__.py", line 1, in <module>
-    from .events import *
-File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\frontend\events\__init__.py", line 1, in <module>
-    from .clipboard import *
-File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\frontend\events\clipboard.py", line 2, in <module>
-    from ..dom import Event
-File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\frontend\dom.py", line 439, in <module>
-    from . import dispatcher
-File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\frontend\dispatcher.py", line 15, in <module>
-    from . import config, server
-File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\frontend\server.py", line 24, in <module>
-    app.mount(config.STATIC_ROUTE, StaticFiles(directory=config.STATIC_DIRECTORY), name=config.STATIC_NAME)
-                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\starlette\staticfiles.py", line 56, in __init__
-    raise RuntimeError(f"Directory '{directory}' does not exist")
