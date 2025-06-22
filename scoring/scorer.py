@@ -1,5 +1,22 @@
+import os
+from typing import Optional
+from dotenv import load_dotenv
+from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
 
+load_dotenv()
+
+# --- Scorecard model --- #
+class Scorecard(BaseModel):
+    ticker: str
+    forensic_score: int
+    ratio_score: int
+    concall_score: int
+    total_score: int
+    summary: str
+    verdict: str
+
+# --- Scoring engine --- #
 class ScoringEngine:
     def __init__(self):
         self.weights = {
@@ -7,7 +24,8 @@ class ScoringEngine:
             "ratio": 0.3,
             "concall": 0.3
         }
-        self.llm = ChatOpenAI(model_name="gpt-4", temperature=0)
+        openai_key = os.getenv("OPENAI_API_KEY")
+        self.llm = ChatOpenAI(api_key=openai_key, model_name="gpt-4", temperature=0)
 
     def score(self,
               ticker: str,
@@ -15,45 +33,73 @@ class ScoringEngine:
               ratio_output: Optional[dict],
               concall_output: Optional[dict]) -> Scorecard:
 
-        # ... same score calculations as before ...
-        # (keep the code that calculates forensic_score, ratio_score, etc.)
+        # Forensic score
+        forensic_score = 100
+        if forensic_output:
+            red_flags = [f for f in forensic_output.get("findings", []) if "red" in f["detail"].lower()]
+            yellow_flags = [f for f in forensic_output.get("findings", []) if "yellow" in f["detail"].lower()]
+            forensic_score -= len(red_flags) * 20 + len(yellow_flags) * 10
+        forensic_score = max(forensic_score, 0)
 
+        # Ratio score
+        ratio_score = 80
+        if ratio_output and len(ratio_output.get("dupont_breakdown", [])) >= 3:
+            ratio_score += 10
+        if ratio_output and "complex" in ratio_output.get("final_summary", "").lower():
+            ratio_score -= 10
+        ratio_score = min(max(ratio_score, 0), 100)
+
+        # Concall score
+        concall_score = 75
+        if concall_output:
+            sentiment = concall_output.get("sentiment", "").lower()
+            confidence = concall_output.get("confidence", "").lower()
+            if "positive" in sentiment:
+                concall_score += 10
+            elif "negative" in sentiment:
+                concall_score -= 15
+            if "high" in confidence:
+                concall_score += 5
+            elif "low" in confidence:
+                concall_score -= 10
+        concall_score = min(max(concall_score, 0), 100)
+
+        # Final weighted score
         total = round(
             forensic_score * self.weights["forensic"] +
             ratio_score * self.weights["ratio"] +
             concall_score * self.weights["concall"]
         )
 
+        # Verdict
         if total >= 80:
             verdict = "Good"
-        elif 60 <= total < 80:
+        elif total >= 60:
             verdict = "Average"
         else:
             verdict = "Risky"
 
-        # --- Build LLM prompt for summary ---
+        # Generate summary
         combined_text = ""
-
         if forensic_output:
-            combined_text += f"Forensic Agent Output:\n{forensic_output.get('final_answer', '')}\n"
+            combined_text += "Forensic Agent Output:\n" + forensic_output.get("final_answer", "") + "\n"
         if ratio_output:
-            combined_text += f"Ratio Agent Output:\n{ratio_output.get('final_summary', '')}\n"
+            combined_text += "Ratio Agent Output:\n" + ratio_output.get("final_summary", "") + "\n"
         if concall_output:
-            combined_text += f"Concall Agent Output:\n{concall_output.get('summary', '')}\n"
+            combined_text += "Concall Agent Output:\n" + concall_output.get("summary", "") + "\n"
 
-        llm_prompt = (
+        summary_prompt = (
             "Summarize the following financial analysis in 3–4 sentences. "
-            "Make it easy to understand for a general investor. Highlight strengths, risks, and notable financial signals.\n\n"
+            "Make it easy to understand for a general investor. Highlight strengths, risks, and signals:\n\n"
             + combined_text
         )
-
-        llm_summary = self.llm.invoke(llm_prompt).content.strip()
+        llm_summary = self.llm.invoke(summary_prompt).content.strip()
 
         summary = (
-            f"📊 Forensic Score: {forensic_score}/100\n"
-            f"📈 Ratio Score: {ratio_score}/100\n"
-            f"🗣️ Concall Score: {concall_score}/100\n"
-            f"✅ Final Score: {total}/100\n"
+            # f"📊 Forensic Score: {forensic_score}/100\n"
+            # f"📈 Ratio Score: {ratio_score}/100\n"
+            # f"🗣️ Concall Score: {concall_score}/100\n"
+            # f"✅ Final Score: {total}/100\n"
             f"🏁 Verdict: {verdict} – based on combined analysis\n\n"
             f"📝 Summary:\n{llm_summary}"
         )

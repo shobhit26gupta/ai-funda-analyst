@@ -36,10 +36,10 @@ if st.button("🔍 Analyze"):
     with st.spinner("🤖 Thinking..."):
 
         # ⚙ Initialize agents
-        router = RouterAgent(openai_api_key=openai_key)
-        forensic_agent = ReActForensicAgent(openai_api_key=openai_key, tavily_api_key=tavily_key)
-        ratio_agent = ReActRatioAgent(openai_api_key=openai_key, tavily_api_key=tavily_key)
-        concall_agent = ReActConcallAgent(openai_api_key=openai_key, tavily_api_key=tavily_key)
+        router = RouterAgent()
+        forensic_agent = ReActForensicAgent()
+        ratio_agent = ReActRatioAgent()
+        concall_agent = ReActConcallAgent()
         scorer = ScoringEngine()
 
         # 🔀 Route
