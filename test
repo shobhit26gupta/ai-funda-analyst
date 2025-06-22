@@ -6,12 +6,17 @@ def extract_text_from_pdf(file_path: str) -> str:
 
     doc = fitz.open(file_path)
     all_text = ""
-    for page in doc:
+    for page_num, page in enumerate(doc):
+        # Try to extract text
         text = page.get_text()
-        if not text.strip():  # If text is empty, fallback to OCR
-            pix = page.get_pixmap(dpi=300)  # Higher DPI improves OCR accuracy
-            img_data = pix.tobytes("png")
-            image = Image.open(io.BytesIO(img_data))
-            text = pytesseract.image_to_string(image)
+        if not text.strip():
+            # No text found — fallback to OCR
+            pix = page.get_pixmap(dpi=300)
+            img_bytes = pix.tobytes("png")  # Render image in memory
+            img = Image.open(io.BytesIO(img_bytes))
+
+            # Perform OCR with no output config
+            text = pytesseract.image_to_string(img, config='')  # no output folder
+
         all_text += text + "\n"
     return all_text
