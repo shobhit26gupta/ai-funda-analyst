@@ -1,13 +1,13 @@
-# src/agents/ratio_agent.py
-
 import os
 import requests
 import pandas as pd
 from bs4 import BeautifulSoup
-from typing import List, Dict
+from typing import List
 from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
-from langchain_community.tools.tavily_search import TavilySearchResults
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # --- Output models --- #
 class DupontComponent(BaseModel):
@@ -22,67 +22,97 @@ class RatioReport(BaseModel):
     dupont_breakdown: List[DupontComponent]
     final_summary: str
 
-# --- ReAct-style Ratio Analysis Agent --- #
+# --- Ratio Agent (uses Moneycontrol) --- #
 class ReActRatioAgent:
-    def __init__(self, openai_api_key: str, tavily_api_key: str):
-        os.environ["TAVILY_API_KEY"] = tavily_api_key
-        self.llm = ChatOpenAI(model_name="gpt-4", temperature=0)
-        self.search = TavilySearchResults(k=5)
+    def __init__(self):
+        openai_key = os.getenv("OPENAI_API_KEY")
+        self.llm = ChatOpenAI(api_key=openai_key, model_name="gpt-4", temperature=0)
 
-        # System instructions for Du Pont analysis
-        self.base_prompt = (
-            "You are an expert financial analyst who specialises in financial statement analysis.\n"
-            "Use the following Link for data: https://www.screener.in/company/{ticker}/consolidated/\n"
-            "Analyse the ROE of the company and do a detailed Du Pont analysis in such a way "
-            "that a 15 year old kid can understand. Break down the ROE, ROCE, and simplify what "
-            "is driving the ROE, ROCE out of all the 3 parts of Du Pont. USE data between FY21–FY25 "
-            "(treat March 2025 as FY25). Keep it simple and clear. I will reward you if you do well."
-        )
+    def fetch_moneycontrol_ratios(self, slug: str, code: str) -> pd.DataFrame:
+        """
+        Scrape ratios table from Moneycontrol using soup instead of read_html.
+        """
+        url = f"https://www.moneycontrol.com/financials/{slug}/ratiosVI/{code}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.text, "html.parser")
 
-    def fetch_screener_data(self, ticker: str) -> pd.DataFrame:
-        """Scrape consolidated financials table from Screener."""
-        search_query = f"{ticker} consolidated Screener.in"
-        results = self.search.run(search_query)
+        table = soup.find("table")
+        if not table:
+            raise ValueError("❌ No table found in the page.")
 
-        for r in results:
-            url = r.get("url", "")
-            if "screener.in/company" in url and "consolidated" in url:
-                resp = requests.get(url, timeout=10)
-                soup = BeautifulSoup(resp.text, "html.parser")
-                table = soup.find("table", {"class": "data-table"})
-                df = pd.read_html(str(table))[0]
-                return df  # returns raw financials
+        rows = table.find_all("tr")
+        data = []
 
-        raise ValueError("Could not fetch Screener data for " + ticker)
+        for row in rows:
+            cols = [col.get_text(strip=True) for col in row.find_all(["td", "th"])]
+            if cols:
+                data.append(cols)
+
+        df = pd.DataFrame(data[1:], columns=data[0])
+        return df
+
+    def extract_relevant_ratios(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Keep only ROE and ROCE rows from the table.
+        """
+        df.columns = df.columns.str.replace("\n", " ").str.strip()
+        df = df.rename(columns=lambda x: x.strip())
+
+        df = df[df.iloc[:, 0].str.contains("Return on Equity|ROCE", case=False, na=False)]
+        df = df.set_index(df.columns[0])
+        return df
 
     def run(self, ticker: str) -> RatioReport:
-        # 1️⃣ Scrape data from Screener
-        df = self.fetch_screener_data(ticker)
+        # Hardcoded map for known companies
+        ticker_map = {
+            "INFY": ("infosys", "IT"),
+            "TCS": ("tataconsultancyservices", "ITE"),
+            "HDFC": ("hdfcbank", "BF05"),
+            "ADANIPORTS": ("adanienterprises", "AE17"),
+        }
 
-        # 2️⃣ Inject raw data into prompt (limit to FY21–FY25)
-        html_data = df.to_html(index=False)
-        full_prompt = self.base_prompt.format(ticker=ticker) + "\n\n" + html_data
+        if ticker not in ticker_map:
+            raise ValueError(f"Ticker {ticker} not supported in hardcoded Moneycontrol map.")
 
-        # 3️⃣ Ask GPT-4 to do the ratio analysis
-        response = self.llm.invoke(full_prompt).content.strip()
+        slug, code = ticker_map[ticker]
 
-        # 4️⃣ Parse the response into structured components
-        dupont_breakdown = []
-        for year in ["FY21", "FY22", "FY23", "FY24", "FY25"]:
-            # Basic parsing – look for "FY21" block in text
-            if year in response:
-                desc = response.split(year)[1].split("FY" if year != "FY25" else "")[0].strip()
-                # Optionally, use regex or smarter parsing here
-                dupont_breakdown.append(DupontComponent(
-                    year=year,
-                    roe=0.0,  # You could parse the numeric value if present
-                    roe_explanation=desc,
-                    roce=0.0,
-                    roce_explanation=desc,
-                ))
+        # Step 1: Scrape and filter ratios
+        df = self.fetch_moneycontrol_ratios(slug, code)
+        ratio_df = self.extract_relevant_ratios(df)
+
+        # Step 2: Prepare summary input text for LLM
+        summary_text = f"ROE and ROCE data for {ticker} (FY21–FY25):\n"
+        for year in ["Mar'21", "Mar'22", "Mar'23", "Mar'24", "Mar'25"]:
+            try:
+                roe = ratio_df.loc["Return on Equity / Networth", year]
+                roce = ratio_df.loc["ROCE (%)", year]
+                summary_text += f"FY{year[-2:]}: ROE = {roe}, ROCE = {roce}\n"
+            except Exception:
+                continue
+
+        prompt = (
+            "You are an expert financial analyst who specialises in financial statement analysis.\n"
+            f"{summary_text}\n\n"
+            "Analyse the ROE and ROCE of the company and do a detailed Du Pont analysis in such a way "
+            "that a 15-year-old kid can understand. Break down what’s driving ROE and ROCE clearly. "
+            "Use plain English and avoid jargon."
+        )
+
+        # Step 3: Ask LLM to explain
+        response = self.llm.invoke(prompt).content.strip()
+
+        # Step 4: Build output
+        dummy_component = DupontComponent(
+            year="FY25",
+            roe=0.0,
+            roe_explanation=response,
+            roce=0.0,
+            roce_explanation=response
+        )
 
         return RatioReport(
             ticker=ticker,
-            dupont_breakdown=dupont_breakdown,
+            dupont_breakdown=[dummy_component],
             final_summary=response
         )

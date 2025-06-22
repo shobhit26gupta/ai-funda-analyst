@@ -1,12 +1,16 @@
-# src/agents/forensic_agent.py
+# agents/forensic_agent.py
 
 import os
 import yfinance as yf
-import pandas as pd
+import requests
 from typing import List
 from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
 from langchain_community.tools.tavily_search import TavilySearchResults
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 # --- Output models --- #
 class Finding(BaseModel):
@@ -14,119 +18,96 @@ class Finding(BaseModel):
     severity: str
     detail: str
 
+
 class Report(BaseModel):
     ticker: str
     findings: List[Finding]
     final_answer: str
 
-# --- ReAct Agent --- #
+
+# --- Single-pass Forensic Agent --- #
 class ReActForensicAgent:
-    def __init__(self, openai_api_key: str, tavily_api_key: str):
-        self.llm = ChatOpenAI(model_name="gpt-4", temperature=0)
-        os.environ["TAVILY_API_KEY"] = tavily_api_key
-        self.search = TavilySearchResults(k=5)
+    def __init__(self):
+        openai_key = os.getenv("OPENAI_API_KEY")
+        tavily_key = os.getenv("TAVILY_API_KEY")
 
-        self.base_prompt = """You are a forensic accounting expert who specialises in detecting accounting fraud, and
-earnings manipulation. use the latest annual report for you to do thorough analysis (use consolidated financials).
+        self.llm = ChatOpenAI(api_key=openai_key, model_name="gpt-4", temperature=0)
+        self.search = TavilySearchResults(api_key=tavily_key, k=5)
 
-Your goal is to conduct a detailed forensic check, examining the financial statements and disclosures for potential red flags that might indicate red flags in accounting, fraudulent accounting and earnings manipulation. Please make your analysis as follows:
+        self.base_prompt = """
+You are a forensic accounting expert specializing in detecting accounting fraud and earnings manipulation.
 
-1.⁠ ⁠Brief Summary 
-Pointers on your key findings and a checklist based on green/yellow/red indicating accounting quality.
+You will receive basic financial data (cash flow, income, balance sheet) along with recent promoter-related news.
 
-2.⁠ ⁠Revenue Recognition Analysis 
-Aggressive revenue recognition practices, working capital analysis, channel stuffing.
+Your task is to analyze and summarize **potential red flags** in accounting, especially in:
 
-3. Cash Flow Discrepancies 
-Compare the cash flows with PAT and EBITDA, and see if earnings are being converted into cash flows or not, triangulate with debt on the balance sheet.
+- Cash flow discrepancies
+- Revenue recognition
+- Related party transactions
+- Audit report concerns
+- Contingent liabilities
+- Unusual expenses
+- Management commentary
 
-4. Related Party Transactions 
-Provide details of all major RTPs, and highlight RTPs that seem suspicious, check for loans given to related parties.
+Do not speculate — use only the data provided.
 
-5.⁠ ⁠Do a thorough check of the Balance Sheet 
-Any write offs of assets or equity, inventory concerns, receivables aging, loans to other parties.
+Return your answer as:
 
-6.⁠ ⁠⁠Check the contingent liabilities and compare it with Net-worth 
-If contingent liabilities size is 10% higher than the net-worth, flag it as a major red flag, also flag any major court cases/litigations.
+1. Summary of key concerns (3–5 lines)
+2. Bullet checklist of potential issues
+3. Label the accounting quality as: ✅ Good, ⚠️ Average, or ❌ Risky
 
-7.⁠ ⁠⁠Do a check on Miscellaneous expenses and flag out any expenses which seem suspicious. 
-See how much Miscellaneous expenses are as a % of sales. If it is higher than 3%, flag it out.
-
-8.⁠ ⁠Management Discussion Analysis
-Are any inconsistencies related to the guidance and financial metrics, or any other warning signs related to slowing growth?
-
-9. Check the Auditors report and read the CARO report carefully. 
-Check the Key Audit matters and see if the Auditor's opinion is Qualified or Unqualified. Assign a Green/Yellow/Red flag on the basis of Auditors Observations.
-
-For each identified red flag, please:
-•⁠ ⁠Quote the specific section, page number, and language from the annual report
-•⁠ ⁠Explain why this represents a potential concern
-•⁠ ⁠Quantify the financial impact where possible
-•⁠ ⁠Make a checklist with Green (indicating clean), Yellow (indicating amber), Red (Indicating red) on all the points given above. Give the company a score in the end on the basis of 
-Accounting Quality: Good, Average, Bad.
-
-Avoid speculation without evidence. Your analysis should solely rely on information contained within the document.
-
-Use precise accounting terminology while making your explanations accessible. Simply to understand any potential red flags. Signal out the pints which require further investigation. 
-
-The idea is to understand the accounting quality and not to label everything as a fraud.
-
-If you need any clarifications or require additional context to complete your analysis, please ask specific questions.
-
-I will reward you if you do the task well.
-
+Be clear, objective, and explain like you're presenting to a finance team.
 """
-    
+
     def run(self, ticker: str) -> Report:
-        # Load financials
-        stock = yf.Ticker(ticker)
-        fin = stock.financials
-        cf = stock.cashflow
+        # 1. Fetch data from yfinance
+        try:
+            stock = yf.Ticker(ticker)
+            fin = stock.financials.T.iloc[-2:].to_string()
+            bal = stock.balance_sheet.T.iloc[-2:].to_string()
+            cf = stock.cashflow.T.iloc[-2:].to_string()
+        except Exception as e:
+            raise RuntimeError(f"Unable to fetch financials for {ticker}: {e}")
 
-        # Simple data formatting
-        fin = fin.T.iloc[-2:].fillna(0)
-        cf = cf.T.iloc[-2:].fillna(0)
+        # 2. Get promoter news via Tavily
+        query = f"{ticker} promoter fraud audit red flags site:moneycontrol.com OR site:trendlyne.com"
+        search_results = self.search.run(query)
+        news_snippets = "\n".join([item.get("content", "") for item in search_results])
 
-        reaccumulated = []
-        conversation = []
+        # 3. Build prompt
+        full_prompt = (
+            self.base_prompt
+            + f"\n\nFinancials:\n{fin}\n\nCash Flow:\n{cf}\n\nBalance Sheet:\n{bal}"
+            + f"\n\nPromoter News:\n{news_snippets}"
+        )
 
-        # Start sequence
-        prompt = f"{self.base_prompt}\nCompany ticker: {ticker}"
+        # 4. Ask LLM
+        final_answer = self.llm.invoke(full_prompt).content.strip()
 
-        while True:
-            response = self.llm.invoke(prompt).content.strip()
-            conversation.append(response)
-
-            # Parse latest Thought or Action
-            if "Action: search_news" in response:
-                # Extract query
-                query = response.split("Action: search_news(")[1].split(")")[0]
-                observation = self.search.run(query)
-                prompt = response + f"\nObservation: {observation}\nThought:"
-                continue
-
-            if "Final Answer:" in response:
-                final_answer = response.split("Final Answer:")[1].strip()
-                break
-
-            # No explicit tool called — let agent decide next
-            prompt = response + "\nThought:"
-
-        # Build findings from conversation – simple heuristic
+        # 5. Heuristic finding detection
         findings = []
-        for msg in conversation:
-            if "red flag" in msg.lower():
-                findings.append(Finding(
-                    name="Detected red flag",
-                    severity="medium",
-                    detail=msg[:200]
-                ))
-
-        if not findings:
+        if "red flag" in final_answer.lower() or "❌" in final_answer:
             findings.append(Finding(
-                name="No obvious red flags",
+                name="Potential red flags",
+                severity="high",
+                detail=final_answer[:300]
+            ))
+        elif "⚠️" in final_answer or "concern" in final_answer.lower():
+            findings.append(Finding(
+                name="Mild concerns",
+                severity="medium",
+                detail=final_answer[:300]
+            ))
+        else:
+            findings.append(Finding(
+                name="No red flags",
                 severity="low",
-                detail="No issues identified in conversation."
+                detail="No major issues detected in single-pass analysis."
             ))
 
-        return Report(ticker=ticker, findings=findings, final_answer=final_answer)
+        return Report(
+            ticker=ticker,
+            findings=findings,
+            final_answer=final_answer
+        )

@@ -1,15 +1,19 @@
 # src/router/router.py
 
+import os
 import json
 import re
 from typing import List
 from openai import OpenAIError
 from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+load_dotenv()
 
 class RouterAgent:
-    def __init__(self, openai_api_key: str):
-        self.llm = ChatOpenAI(model_name="gpt-4", temperature=0)
-    
+    def __init__(self):
+        openai_key = os.getenv("OPENAI_API_KEY")
+        self.llm = ChatOpenAI(model_name="gpt-4.1-nano", temperature=0,api_key=openai_key)
+        
     def route(self, user_query: str) -> dict:
         system_prompt = f"""
 You are a query routing assistant for a financial analysis system.

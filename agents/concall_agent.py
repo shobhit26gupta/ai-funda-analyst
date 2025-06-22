@@ -6,6 +6,7 @@ from langchain_openai import ChatOpenAI
 from langchain_community.tools.tavily_search import TavilySearchResults
 from dotenv import load_dotenv
 load_dotenv()
+from tavily import TavilyClient
 
 
 # --- Output model --- #
@@ -18,10 +19,11 @@ class ConcallInsight(BaseModel):
 
 # --- ReAct-style Agent --- #
 class ReActConcallAgent:
-    def __init__(self, openai_api_key: str, tavily_api_key: str):
-        os.getenv("TAVILY_API_KEY") = tavily_api_key
-        self.llm = ChatOpenAI(model_name="gpt-4", temperature=0)
-        self.search = TavilySearchResults(k=5)
+    def __init__(self):
+        openai_key = os.getenv("OPENAI_API_KEY")
+        tavily_api_key = os.getenv("TAVILY_API_KEY")
+        self.llm = ChatOpenAI(model_name="gpt-4.1-nano", temperature=0,api_key=openai_key)
+        self.search = TavilySearchResults(api_key=tavily_api_key,k=5)
 
         self.base_prompt = """You are a financial research assistant analyzing a company’s earnings conference call transcript.
 Your task is to extract all critical information objectively, using only the transcript — no assumptions or outside data.
