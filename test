@@ -1,22 +1,24 @@
-def extract_text_from_pdf(file_path: str) -> str:
+RuntimeError: Directory 'static/' does not exist
+Traceback:
+File "C:\Users\naina\Downloads\agentic_rag_streamlit\ai_funda_analyst\ai-funda-analyst\app.py", line 9, in <module>
+    from agents.rag_pipeline import process_document, query_document
+File "C:\Users\naina\Downloads\agentic_rag_streamlit\ai_funda_analyst\ai-funda-analyst\agents\rag_pipeline.py", line 1, in <module>
     import fitz  # PyMuPDF
-    import pytesseract
-    from PIL import Image
-    import io
-
-    doc = fitz.open(file_path)
-    all_text = ""
-    for page_num, page in enumerate(doc):
-        # Try to extract text
-        text = page.get_text()
-        if not text.strip():
-            # No text found — fallback to OCR
-            pix = page.get_pixmap(dpi=300)
-            img_bytes = pix.tobytes("png")  # Render image in memory
-            img = Image.open(io.BytesIO(img_bytes))
-
-            # Perform OCR with no output config
-            text = pytesseract.image_to_string(img, config='')  # no output folder
-
-        all_text += text + "\n"
-    return all_text
+    ^^^^^^^^^^^
+File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\fitz\__init__.py", line 1, in <module>
+    from frontend import *
+File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\frontend\__init__.py", line 1, in <module>
+    from .events import *
+File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\frontend\events\__init__.py", line 1, in <module>
+    from .clipboard import *
+File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\frontend\events\clipboard.py", line 2, in <module>
+    from ..dom import Event
+File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\frontend\dom.py", line 439, in <module>
+    from . import dispatcher
+File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\frontend\dispatcher.py", line 15, in <module>
+    from . import config, server
+File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\frontend\server.py", line 24, in <module>
+    app.mount(config.STATIC_ROUTE, StaticFiles(directory=config.STATIC_DIRECTORY), name=config.STATIC_NAME)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "C:\Users\naina\Downloads\agentic_rag_streamlit\venv\Lib\site-packages\starlette\staticfiles.py", line 56, in __init__
+    raise RuntimeError(f"Directory '{directory}' does not exist")
