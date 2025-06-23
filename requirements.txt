@@ -7,6 +7,8 @@ openai
 streamlit
 langchain>=0.1.17
 python-dotenv
+fitz
+frontend
 
 # 🤖 LLM models + LangChain wrappers
 langchain-openai

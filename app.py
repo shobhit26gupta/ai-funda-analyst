@@ -6,6 +6,7 @@ from agents.ratio_agent import ReActRatioAgent
 from agents.concall_agent import ReActConcallAgent
 from router.router import RouterAgent
 from scoring.scorer import ScoringEngine
+from agents.rag_pipeline import process_document, query_document
 
 # 📌 Setup
 st.set_page_config(page_title="AI Fundamental Analyst", layout="wide")
@@ -78,3 +79,22 @@ if st.button("🔍 Analyze"):
 
         st.success(result.verdict)
         st.text_area("🧾 Full Summary", result.summary, height=300)
+
+st.markdown("---")
+st.header("📄 Ask Questions from Your Own Document")
+
+uploaded_file = st.file_uploader("Upload a PDF document to enable RAG-based querying")
+
+if uploaded_file:
+    with open("temp_uploaded.pdf", "wb") as f:
+        f.write(uploaded_file.read())
+
+    process_document("temp_uploaded.pdf")
+    st.success("✅ Document processed. You can now ask questions.")
+
+    user_question = st.text_input("❓ Enter your question about the document")
+
+    if user_question:
+        with st.spinner("🔎 Searching with RAG..."):
+            answer = query_document(user_question)
+            st.markdown(f"**📘 Answer:** {answer}")
